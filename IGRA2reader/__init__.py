@@ -131,7 +131,8 @@ def readigra(filename,interpolation = True):
         if any(soundings[index][0] < -8888):
             for i in range(len(soundings[index][0])):
                 if soundings[index][0][i] < -8888 and soundings[index][1][i] > -8888:
-                    soundings[index][0][i] = pressure_levels[find_nearest(pressure_levels, 101300.*np.e**(-soundings[index][1][i]/8400.))]
+                    soundings[index][0][i] = pressure_levels[find_nearest(pressure_levels, 
+                        101300/np.e**(9.81*soundings[index][1][i]/288/287))]
 
         not_missing_p = soundings[index][0] > -8888
 

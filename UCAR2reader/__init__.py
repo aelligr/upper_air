@@ -6,7 +6,6 @@ import zipfile as zp
 import six
 import sys
 
-
 __version__ = "0.1"
 
 def find_nearest(array, value):
@@ -100,8 +99,13 @@ def readucar(filename,interpolation = True):
             typesounding.append('PiBal')
 
         soundings.append(data)
-        time_stamps.append(datetime.strptime(header[38:42]+' '+header[43:45].strip()+' '+header[46:48].strip()\
-                +' '+str(int(header[49:53])).strip().zfill(4)[0:2],'%Y %m %d %H'))
+        if header[51:53] != '51':
+            time_stamps.append(datetime.strptime(header[38:42]+' '+header[43:45].strip()+' '+header[46:48].strip()\
+                    +' '+str(int(header[49:53])).strip().zfill(4)[0:2]\
+                    +' '+str(int(float(header[51:53])/100*60)).strip().zfill(2),'%Y %m %d %H %M'))
+        else:
+            time_stamps.append(datetime.strptime(header[38:42]+' '+header[43:45].strip()+' '+header[46:48].strip()\
+                    +' '+str(int(header[49:53])).strip().zfill(4)[0:2], '%Y %m %d %H'))
 
         try:
             releasetime.append(datetime.strptime(header[49:51],'%H'))
@@ -133,12 +137,14 @@ def readucar(filename,interpolation = True):
         if any(soundings[index][0] < -8888):
             for i in range(len(soundings[index][0])):
                 if soundings[index][0][i] < -8888 and soundings[index][1][i] > -8888:
-                    soundings[index][0][i] = pressure_levels[find_nearest(pressure_levels, 101300.*np.e**(-soundings[index][1][i])/8400.)]
-
+                    soundings[index][0][i] = pressure_levels[find_nearest(pressure_levels, 
+                        101300/np.e**(9.81*soundings[index][1][i]/288/287))]
         not_missing_p = soundings[index][0] > -8888
 
         # loop over all variables
         for variable in range(1, 7):
+            
+
             # removal of invalid values
             not_missing_var = soundings[index][variable] > -888
             not_missing = np.logical_and(not_missing_var, not_missing_p)
@@ -253,7 +259,7 @@ def __batch_import(files):
     datasets = []
     for file in files:
         # read one file
-        datasets.append(read(file))
+        datasets.append(readucar(file))
 
         # expanding a dimension to host the station ID
         datasets[-1] = datasets[-1].expand_dims('stations')
