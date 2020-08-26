@@ -4,6 +4,8 @@ import xarray as xr
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+import sys
+import requests
 
 ''' This function returns the name of a given WMO station number'''
 def station_read(number):
@@ -61,3 +63,56 @@ def open_nc_file(f):
     data = xr.open_dataset('data/output/'+f[:-3])                       # This read the netcdf file in and returns the array
     os.system('gzip data/output/'+f[:-3])
     return data
+
+
+'''Download functions'''
+def check_file_status(filepath, filesize):
+    sys.stdout.write('\r')
+    sys.stdout.flush()
+    size = int(os.stat(filepath).st_size)
+    percent_complete = (size/filesize)*100
+    sys.stdout.write('%.3f %s' % (percent_complete, '% Completed'))
+    sys.stdout.flush()
+def download(filelist):
+    # Try to get password
+    if len(sys.argv) < 2 and not 'RDAPSWD' in os.environ:
+        try:
+            import getpass
+            input = getpass.getpass
+        except:
+            try:
+                input = raw_input
+            except:
+                pass
+        pswd = '87ZI3t4w'
+    else:
+        try:
+            pswd = sys.argv[1]
+        except:
+            pswd = os.environ['RDAPSWD']
+    
+    url = 'https://rda.ucar.edu/cgi-bin/login'
+    values = {'email' : 'raffael.aellig@kit.edu', 'passwd' : pswd, 'action' : 'login'}
+    # Authenticate
+    ret = requests.post(url,data=values)
+    if ret.status_code != 200:
+        print('Bad Authentication')
+        print(ret.text)
+        exit(1)
+    dspath = 'https://rda.ucar.edu/data/ds370.1/'
+    for file in filelist:
+        filename=dspath+file
+        file_base = os.path.basename(file)
+        print('Downloading',file_base)
+        req = requests.get(filename, cookies = ret.cookies, allow_redirects=True, stream=True)
+        filesize = int(req.headers['Content-length'])
+        with open(file_base, 'wb') as outfile:
+            chunk_size=1048576
+            for chunk in req.iter_content(chunk_size=chunk_size):
+                outfile.write(chunk)
+                if chunk_size < filesize:
+                    check_file_status(file_base, filesize)
+        check_file_status(file_base, filesize)
+        os.system('mv '+file+' data/ucar/'+file)
+        print()
+

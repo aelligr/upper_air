@@ -99,7 +99,10 @@ def readucar(filename,interpolation = True):
             typesounding.append('PiBal')
 
         soundings.append(data)
-        if header[51:53] != '51':
+        if header[49:51] == '24':
+            time_stamps.append(datetime.strptime(header[38:42]+' '+header[43:45].strip()+' '+header[46:48].strip()\
+                    +' 00'+' 00','%Y %m %d %H %M'))
+        elif header[51:53] != '51':
             time_stamps.append(datetime.strptime(header[38:42]+' '+header[43:45].strip()+' '+header[46:48].strip()\
                     +' '+str(int(header[49:53])).strip().zfill(4)[0:2]\
                     +' '+str(int(float(header[51:53])/100*60)).strip().zfill(2),'%Y %m %d %H %M'))
