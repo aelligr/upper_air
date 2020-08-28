@@ -105,6 +105,9 @@ def download(filelist):
         file_base = os.path.basename(file)
         print('Downloading',file_base)
         req = requests.get(filename, cookies = ret.cookies, allow_redirects=True, stream=True)
+        if req.status_code != 200:
+            print('No '+file+' on the server, continue to next file')
+            continue
         filesize = int(req.headers['Content-length'])
         with open(file_base, 'wb') as outfile:
             chunk_size=1048576
