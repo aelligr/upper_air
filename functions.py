@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import os
 import sys
 import requests
+from ftplib import FTP
 
 ''' This function returns the name of a given WMO station number'''
 def station_read(number):
@@ -14,22 +15,38 @@ def station_read(number):
 
     for n,line in enumerate(stationlist):
         if line[0:6] == number:
-            return line[13:43].strip()
-    return 'noname'
+            return line[13:43].strip(), line[43:45]
+    return 'noname', 'nc'
 
 
 '''This function conatenates igra and the 4 kind of upperair observations
 from UCAR to one gzipped netcdf file.'''
 def concat_upperair(base, f1, f2, f3, f4, station):
-    dataigra = readigra('data/igra/'+base, interpolation=False)         # This read the igra file
+    try:
+        dataigra = readigra('data/igra/'+base, interpolation=False)         # This read the igra file
+    except FileNotFoundError as err:
+        print('No IGRA file for '+station)
+        print(err)
+        print('Go for the others')
+        for f in [f1,f2,f3,f4]:                                             # Loop through the files
+            try:
+                dataigra = readucar('data/ucar/'+f, interpolation=False)
+                break
+            except FileNotFoundError:
+                print('no such file: '+f)                                   # prints if file does not exist
+            except:
+                print('reading '+f+' did not work')
+
     dataucar = {}                                                       # This is the dictionary for the UCAR files
     filelist = []
     for f in [f1,f2,f3,f4]:                                             # Loop through the files
         try:
             dataucar[f] = readucar('data/ucar/'+f, interpolation=False)
             filelist.append(f)                                          # expand filelist for later concatenating, therefore no concatenation of not existing files
+        except FileNotFoundError:
+            print('no such file: '+f+' or reading file did not wortk')  # prints if file does not exist
         except:
-            print('no such file: '+f)                                   # prints if file does not exist
+            print('reading '+f+' did not work')
 
     for f in filelist:                                                  # loop over available filelist
         ucarlist = []
@@ -49,19 +66,19 @@ def concat_upperair(base, f1, f2, f3, f4, station):
     dataigra = dataigra.drop('releasetime')                             # delete not accepted variables by xarray netcdf
     dataigra = dataigra.drop('date')
 
-    name = station_read(station)                                        # name of staation
+    name, ct = station_read(station)                                        # name of staation
     
     dataigra.to_netcdf('data/output/'+name+'_upperair.nc')              # write to netcdf file
     
-    os.system('gzip data/output/'+name+'_upperair.nc')                  # gzip the data: Libreville file is then reduced from 800 M to 7 M. Therefore, take care of your memory
+    os.system('gzip -f data/output/'+name+'_upperair.nc')               # gzip the data: Libreville file is then reduced from 800 M to 7 M. Therefore, take care of your memory
     return
 
 
 '''This function unzippes, read, zippes, and returns data'''
 def open_nc_file(f):
-    os.system('gunzip data/output/'+f)                                  # This is command for the shell to unzip the file
+    os.system('gunzip -f data/output/'+f)                               # This is command for the shell to unzip the file
     data = xr.open_dataset('data/output/'+f[:-3])                       # This read the netcdf file in and returns the array
-    os.system('gzip data/output/'+f[:-3])
+    os.system('gzip -f data/output/'+f[:-3])
     return data
 
 
@@ -73,7 +90,7 @@ def check_file_status(filepath, filesize):
     percent_complete = (size/filesize)*100
     sys.stdout.write('%.3f %s' % (percent_complete, '% Completed'))
     sys.stdout.flush()
-def download(filelist):
+def download_ucar(filelist):
     # Try to get password
     if len(sys.argv) < 2 and not 'RDAPSWD' in os.environ:
         try:
@@ -101,6 +118,9 @@ def download(filelist):
         exit(1)
     dspath = 'https://rda.ucar.edu/data/ds370.1/'
     for file in filelist:
+        if os.path.exists('data/ucar/'+file):
+            print(file+' already exists.')
+            continue
         filename=dspath+file
         file_base = os.path.basename(file)
         print('Downloading',file_base)
@@ -119,3 +139,24 @@ def download(filelist):
         os.system('mv '+file+' data/ucar/'+file)
         print()
 
+def download_igra(f):
+    path = 'data/igra/'
+    if os.path.exists(path+f) and os.path.getsize(path+f) > 0:
+        print(f+' already exists.')
+        return
+
+    # prepare for enter ftp server, login anonymous
+    ftp = FTP('ftp.ncdc.noaa.gov')
+    ftp.login()
+    ftp.cwd('/pub/data/igra/data/data-por/')
+
+    # download files if they exist on ftp server and not in local directory
+    handle = open('data/igra/'+f, 'wb')
+    ftp.retrbinary('RETR '+f, handle.write)
+    ftp.quit()
+
+    if os.path.getsize(path+f) == 0:
+        os.sys('rm -f '+path+f)
+    print('download '+f+' complete')
+
+    return

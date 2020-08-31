@@ -83,6 +83,27 @@ def readucar(filename,interpolation = True):
             current_line += number_of_levels + 1
             continue
 
+        try:
+            if header[49:51] == '24':
+                time_stamps.append(datetime.strptime(header[38:42]+' '+header[43:45].strip()+' '+header[46:48].strip()\
+                        +' 00'+' 00','%Y %m %d %H %M') + timedelta(days=1))
+            elif header[49:51] == '31':
+                current_line += number_of_levels + 1
+                continue
+            elif header[51:53] != '51':
+                time_stamps.append(datetime.strptime(header[38:42]+' '+header[43:45].strip()+' '+header[46:48].strip()\
+                        +' '+str(int(header[49:53])).strip().zfill(4)[0:2]\
+                        +' '+str(int(float(header[51:53])/100*60)).strip().zfill(2),'%Y %m %d %H %M'))
+            else:
+                time_stamps.append(datetime.strptime(header[38:42]+' '+header[43:45].strip()+' '+header[46:48].strip()\
+                        +' '+str(int(header[49:53])).strip().zfill(4)[0:2], '%Y %m %d %H'))
+        except ValueError as err:
+            print('Failed Reading date and time')
+            print(err)
+            print(header)
+            current_line += number_of_levels + 1
+            continue
+
         #Extracting ...
         data = [np.array([float(i[ 5:13])*100 for i in sounding]),          # Pressure in Pa
                 np.array([float(i[14:22]) for i in sounding]),          # Geopotential Height in m
@@ -99,16 +120,6 @@ def readucar(filename,interpolation = True):
             typesounding.append('PiBal')
 
         soundings.append(data)
-        if header[49:51] == '24':
-            time_stamps.append(datetime.strptime(header[38:42]+' '+header[43:45].strip()+' '+header[46:48].strip()\
-                    +' 00'+' 00','%Y %m %d %H %M'))
-        elif header[51:53] != '51':
-            time_stamps.append(datetime.strptime(header[38:42]+' '+header[43:45].strip()+' '+header[46:48].strip()\
-                    +' '+str(int(header[49:53])).strip().zfill(4)[0:2]\
-                    +' '+str(int(float(header[51:53])/100*60)).strip().zfill(2),'%Y %m %d %H %M'))
-        else:
-            time_stamps.append(datetime.strptime(header[38:42]+' '+header[43:45].strip()+' '+header[46:48].strip()\
-                    +' '+str(int(header[49:53])).strip().zfill(4)[0:2], '%Y %m %d %H'))
 
         try:
             releasetime.append(datetime.strptime(header[49:51],'%H'))
