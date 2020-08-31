@@ -152,7 +152,15 @@ def download_igra(f):
 
     # download files if they exist on ftp server and not in local directory
     handle = open('data/igra/'+f, 'wb')
-    ftp.retrbinary('RETR '+f, handle.write)
+    try:
+        ftp.retrbinary('RETR '+f, handle.write)
+    except:
+        print(f+' is not on noaa-igra server')
+        ftp.quit()
+        handle.close()
+        os.system('rm -f data/igra/'+f)
+        return
+    handle.close()
     ftp.quit()
 
     if os.path.getsize(path+f) == 0:
