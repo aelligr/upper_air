@@ -1,6 +1,6 @@
 from functions import concat_upperair, download_ucar, download_igra, open_nc_file, station_read
 
-station = '644000'
+station = '645000'
 name, ct = station_read(station)
 
 base = ct+'M000'+station[:5]+'-data.txt.zip'
