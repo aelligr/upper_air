@@ -114,7 +114,7 @@ def readucar(filename,interpolation = True):
                 np.array([float(i[44:50]) for i in sounding])]          # Wind Speed in tenths of m/s
 
         # read which data format it is
-        if int(header[86:88]) == 1 or int(header[86:88]) == 3:
+        if int(header[87:88]) == 1 or int(header[87:88]) == 3:
             typesounding.append('Radiosounding')
         else:
             typesounding.append('PiBal')

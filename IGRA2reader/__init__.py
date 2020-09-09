@@ -90,7 +90,7 @@ def readigra(filename,interpolation = True):
                 np.array([float(i[46:51]) for i in sounding])]          # Wind Speed in tenths of m/s
 
         # read which data format it is
-        if any([i[ 9:15] != ' -9999' for i in sounding]):
+        if any([i[22:27] != '-9999' for i in sounding]) or any([i[28:33] != '-9999' for i in sounding]):
             typesounding.append('Radiosounding')
         else:
             typesounding.append('PiBal')
