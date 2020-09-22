@@ -50,14 +50,16 @@ def concat_upperair(base, f1, f2, f3, f4, station):
 
     for f in filelist:                                                  # loop over available filelist
         ucarlist = []
+        ucartimelist = []
         formerstep = 0
         for i,timestep in enumerate(dataucar[f].time.values):
             if formerstep == timestep:
                 continue
             formerstep = timestep
-            if timestep in dataigra.time.values:                        # if timestep already in igra or former UCAR file, then go to the next timestep
+            if timestep in dataigra.time.values or timestep in ucartimelist:    # if timestep already in igra or former UCAR file, then go to the next timestep
                 continue
             else:
+                ucartimelist.append(timestep)
                 ucarlist.append(i)                                      # expand list, which timesteps we have to concatenate
         dataigra = xr.concat([dataigra, dataucar[f].isel(time=ucarlist)], dim='time')   # concatenate
     
