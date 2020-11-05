@@ -168,5 +168,6 @@ def download_igra(f):
     if os.path.getsize(path+f) == 0:
         os.sys('rm -f '+path+f)
     print('download '+f+' complete')
+    blabla = 50
 
     return
