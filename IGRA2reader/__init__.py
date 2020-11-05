@@ -1,19 +1,103 @@
 import numpy as np
 import xarray as xr
+import pandas as pd
 from datetime import datetime
 from datetime import timedelta
 import zipfile as zp
 import six
 import sys
-
+from timezonefinder import TimezoneFinder
+import pytz
 
 __version__ = "0.1"
+def stat_coords(station):
+    f = pd.read_csv('stationlist.txt', sep=' ', skipinitialspace=True)
+    lat = f['LAT'].where(f['USAF'] == float(station)).dropna().values[0]
+    lon = f['LON'].where(f['USAF'] == float(station)).dropna().values[0]
+    return lat, lon
 
 def find_nearest(array, value):
     array = np.asarray(array)
     idx = (np.abs(array - value)).argmin()
     return idx
 
+def hour_rounder(t):
+    # Rounds to nearest hour by adding a timedelta hour if minute >= 30
+    return (t.replace(second=0, microsecond=0, minute=0, hour=t.hour)
+               +timedelta(hours=t.minute//30))
+
+def header2datetime(local_time_zone, time_stamps, releasetime, header):
+    acttime = None
+    reltime = None
+    if header[24:26] == '99' and header[27:31] == '9999':
+        return False, acttime, reltime
+    elif header[24:26] == '99' and header[27:29] != '99' and header[29:31] == '99':
+        try:
+            acttime = hour_rounder(datetime.strptime(header[13:23]+' '+header[27:29], '%Y %m %d %H'))
+            reltime = datetime.strptime(header[13:23]+' '+header[27:29], '%Y %m %d %H')
+            return True, acttime, reltime
+        except:
+            return False, acttime, reltime
+    elif header[24:26] == '99' and header[27:31] != '9999':
+        try:
+            acttime = hour_rounder(datetime.strptime(header[13:23]+' '+header[27:31], '%Y %m %d %H%M'))
+            reltime = datetime.strptime(header[13:23]+' '+header[27:31], '%Y %m %d %H%M')
+            return True, acttime, reltime
+        except:
+            return False, acttime, reltime
+    elif header[24:26] != '99' and header[27:31] == '9999':
+        try:
+            acttime = hour_rounder(datetime.strptime(header[13:23]+' '+header[24:26], '%Y %m %d %H'))\
+                    - timedelta(hours=int(pytz.timezone(local_time_zone).localize(datetime(int(header[13:17]), int(header[18:20]), int(header[21:23]), int(header[24:26]))).strftime('%z'))/100)
+            reltime = datetime.strptime(header[13:23]+' '+header[24:26], '%Y %m %d %H')\
+                    - timedelta(hours=int(pytz.timezone(local_time_zone).localize(datetime(int(header[13:17]), int(header[18:20]), int(header[21:23]), int(header[24:26]))).strftime('%z'))/100)
+            return True, acttime, reltime
+        except:
+            return False, acttime, reltime
+    elif header[24:26] != '99' and header[27:29] != '99' and header[29:31] == '99':
+        try:
+            acttime = hour_rounder(datetime.strptime(header[13:23]+' '+header[27:29], '%Y %m %d %H'))
+            reltime = datetime.strptime(header[13:23]+' '+header[27:29], '%Y %m %d %H')
+            return True, acttime, reltime
+        except ValueError:
+            try:
+                acttime = hour_rounder(datetime.strptime(header[13:23]+' '+header[29:31], '%Y %m %d %H'))\
+                        - timedelta(hours=int(pytz.timezone(local_time_zone).localize(datetime(int(header[13:17]), int(header[18:20]), int(header[21:23]), int(header[24:26]))).strftime('%z'))/100)
+                reltime = datetime.strptime(header[13:23]+' '+header[29:31], '%Y %m %d %H')\
+                        - timedelta(hours=int(pytz.timezone(local_time_zone).localize(datetime(int(header[13:17]), int(header[18:20]), int(header[21:23]), int(header[24:26]))).strftime('%z'))/100)
+                return True, acttime, reltime
+            except:
+                return False, acttime, reltime
+        except:
+            return False, acttime, reltime
+    elif header[24:26] != '99' and header[27:31] != '9999':
+        try:
+            acttime = hour_rounder(datetime.strptime(header[13:23]+' '+header[27:31], '%Y %m %d %H%M'))
+            reltime = datetime.strptime(header[13:23]+' '+header[27:31], '%Y %m %d %H%M')
+            return True, acttime, reltime
+        except ValueError:
+            try:
+                acttime = hour_rounder(datetime.strptime(header[13:23]+' '+header[27:29], '%Y %m %d %H'))
+                reltime = datetime.strptime(header[13:23]+' '+header[27:29], '%Y %m %d %H')
+                return True, acttime, reltime
+            except ValueError:
+                try:
+                    acttime = hour_rounder(datetime.strptime(header[13:23]+' '+header[29:31], '%Y %m %d %H'))\
+                            - timedelta(hours=int(pytz.timezone(local_time_zone).localize(datetime(int(header[13:17]), int(header[18:20]), int(header[21:23]), int(header[24:26]))).strftime('%z'))/100)
+                    reltime = datetime.strptime(header[13:23]+' '+header[29:31], '%Y %m %d %H')\
+                            - timedelta(hours=int(pytz.timezone(local_time_zone).localize(datetime(int(header[13:17]), int(header[18:20]), int(header[21:23]), int(header[24:26]))).strftime('%z'))/100)
+                    return True, acttime, reltime
+                except:
+                    return False, acttime, reltime
+                return False, acttime, reltime
+            return False, acttime, reltime
+    else:
+        print('wrong something')
+        print(header)
+        quit()
+        return
+
+    return False, acttime, reltime
 
 def readigra(filename,interpolation = True):
     """
@@ -45,6 +129,11 @@ def readigra(filename,interpolation = True):
             - lon [degrees_east]
             - lat [degrees_north]
     """
+    # define timezone
+    tf = TimezoneFinder(in_memory=True)
+    lat, lon = stat_coords(filename[16:21]+'0')
+    local_time_zone = tf.timezone_at(lng=lon, lat=lat)
+    timezone = pytz.timezone(local_time_zone)
 
     # more than one file?
     if isinstance(filename, list):
@@ -72,7 +161,16 @@ def readigra(filename,interpolation = True):
     while current_line < len(lines):
         # the first line contains information about the station. check the format
         header = lines[current_line]
-        if len(header.strip()) < 71 or not header.startswith("#"):
+        if len(header.strip()) < 71 or not header.startswith('#'):
+            current_line += 1
+            continue
+
+        # read in timestamps
+        bool_var, acttime, reltime = header2datetime(local_time_zone, time_stamps, releasetime, header)
+        if bool_var:
+            time_stamps.append(acttime)
+            releasetime.append(acttime)
+        else:
             current_line += 1
             continue
 
@@ -96,15 +194,6 @@ def readigra(filename,interpolation = True):
             typesounding.append('PiBal')
 
         soundings.append(data)
-        if header[24:26] == '99':
-            time_stamps.append(datetime.strptime(header[13:23],'%Y %m %d'))
-        else:
-            time_stamps.append(datetime.strptime(header[13:26],'%Y %m %d %H'))
-
-        try:
-            releasetime.append(datetime.strptime(header[27:31],'%H%M'))
-        except:
-            releasetime.append(np.datetime64('NaT','s'))
         coordinates.append([float(header[55:62]) / 10000.0, float(header[63:71]) / 10000.0])
         current_line += number_of_levels + 1
 

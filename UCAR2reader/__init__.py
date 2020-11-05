@@ -5,14 +5,71 @@ from datetime import timedelta
 import zipfile as zp
 import six
 import sys
+from timezonefinder import TimezoneFinder
+import pandas as pd
 
 __version__ = "0.1"
+
+def stat_coords(station):
+    f = pd.read_csv('stationlist.txt', sep=' ', skipinitialspace=True)
+    lat = f['LAT'].where(f['USAF'] == float(station)).dropna().values[0]
+    lon = f['LON'].where(f['USAF'] == float(station)).dropna().values[0]
+    return lat, lon
 
 def find_nearest(array, value):
     array = np.asarray(array)
     idx = (np.abs(array - value)).argmin()
     return idx
 
+def hour_rounder(t):
+    # Rounds to nearest hour by adding a timedelta hour if minute >= 30
+    return (t.replace(second=0, microsecond=0, minute=0, hour=t.hour)
+               +timedelta(hours=t.minute//30))
+
+def header2datetime(header, local_time_zone):
+    acttime = None
+    reltime = None
+    if any([header[43:45] == '99', header[46:48] == '99', header[49:53] == '9999']):
+        return False, acttime, reltime
+    else:
+        if header[36:37] != '8':
+            tdelta = timedelta(hours=0)
+        else:
+            try:
+                tdelta = timedelta(hours=int(pytz.timezone(local_time_zone).localize(datetime(int(header[38:42]), int(header[43:45]), int(header[46:48]), int(header[24:26]))).strftime('%z'))/100)
+            except:
+                return False, acttime, reltime
+        try:
+            if header[49:51] == '24':
+                acttime = hour_rounder(datetime.strptime(header[38:42]+' '+header[43:45].strip()+' '+header[46:48].strip()\
+                        +' 00'+' 00','%Y %m %d %H %M') + timedelta(days=1)) + tdelta
+                reltime = datetime.strptime(header[38:42]+' '+header[43:45].strip()+' '+header[46:48].strip()\
+                        +' 00'+' 00','%Y %m %d %H %M') + timedelta(days=1) + tdelta
+                return True, acttime, reltime
+            elif header[49:51] == '51':
+                return False, acttime, reltime
+            elif header[51:53] != '51':
+                acttime = hour_rounder(datetime.strptime(header[38:42]+' '+header[43:45].strip()+' '+header[46:48].strip()\
+                        +' '+str(int(header[49:53])).strip().zfill(4)[0:2]\
+                        +' '+str(int(float(header[51:53])/100*60)).strip().zfill(2),'%Y %m %d %H %M')) + tdelta
+                reltime = datetime.strptime(header[38:42]+' '+header[43:45].strip()+' '+header[46:48].strip()\
+                        +' '+str(int(header[49:53])).strip().zfill(4)[0:2]\
+                        +' '+str(int(float(header[51:53])/100*60)).strip().zfill(2),'%Y %m %d %H %M') + tdelta
+                return True, acttime, reltime
+            else:
+                acttime = hour_rounder(datetime.strptime(header[38:42]+' '+header[43:45].strip()+' '+header[46:48].strip()\
+                        +' '+str(int(header[49:53])).strip().zfill(4)[0:2], '%Y %m %d %H')) + tdelta
+                reltime = datetime.strptime(header[38:42]+' '+header[43:45].strip()+' '+header[46:48].strip()\
+                        +' '+str(int(header[49:53])).strip().zfill(4)[0:2], '%Y %m %d %H') + tdelta
+                return True, acttime, reltime
+        except ValueError as err:
+            print('Failed Reading date and time')
+            print(err)
+            print(header)
+            return False, acttime, reltime
+    print('Failed Reading date and time')
+    print(header)
+    return False, acttime, reltime
 
 def readucar(filename,interpolation = True):
     """
@@ -60,6 +117,11 @@ def readucar(filename,interpolation = True):
         with open(filename) as txtfile:
             lines = txtfile.readlines()
 
+    # define timezone
+    tf = TimezoneFinder(in_memory=True)
+    lat, lon = stat_coords(lines[0][16:21]+'0')
+    local_time_zone = tf.timezone_at(lng=lon, lat=lat)
+
     # separate the soundings and extracting Height and pressure
     station_id = lines[0][16:21]
     soundings = []
@@ -79,28 +141,11 @@ def readucar(filename,interpolation = True):
         number_of_levels = int(header[90:93])
         sounding = lines[current_line+1:current_line+1+number_of_levels]
 
-        if any([header[43:45] == '99', header[46:48] == '99', header[49:53] == '9999']):
-            current_line += number_of_levels + 1
-            continue
-
-        try:
-            if header[49:51] == '24':
-                time_stamps.append(datetime.strptime(header[38:42]+' '+header[43:45].strip()+' '+header[46:48].strip()\
-                        +' 00'+' 00','%Y %m %d %H %M') + timedelta(days=1))
-            elif header[49:51] == '31':
-                current_line += number_of_levels + 1
-                continue
-            elif header[51:53] != '51':
-                time_stamps.append(datetime.strptime(header[38:42]+' '+header[43:45].strip()+' '+header[46:48].strip()\
-                        +' '+str(int(header[49:53])).strip().zfill(4)[0:2]\
-                        +' '+str(int(float(header[51:53])/100*60)).strip().zfill(2),'%Y %m %d %H %M'))
-            else:
-                time_stamps.append(datetime.strptime(header[38:42]+' '+header[43:45].strip()+' '+header[46:48].strip()\
-                        +' '+str(int(header[49:53])).strip().zfill(4)[0:2], '%Y %m %d %H'))
-        except ValueError as err:
-            print('Failed Reading date and time')
-            print(err)
-            print(header)
+        bool_var, acttime, reltime = header2datetime(header, local_time_zone)
+        if bool_var:
+            time_stamps.append(acttime)
+            releasetime.append(reltime)
+        else:
             current_line += number_of_levels + 1
             continue
 
@@ -121,10 +166,6 @@ def readucar(filename,interpolation = True):
 
         soundings.append(data)
 
-        try:
-            releasetime.append(datetime.strptime(header[49:51],'%H'))
-        except:
-            releasetime.append(np.datetime64('NaT','s'))
         coordinates.append([float(header[57:67]), float(header[68:78])])
         current_line += number_of_levels + 1
 
